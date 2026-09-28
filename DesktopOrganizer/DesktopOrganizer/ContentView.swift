@@ -27,10 +27,47 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .padding(.top, 12)
 
+            ZoneView(
+                title: "Research",
+                iconName: "folder",
+                emptyMessage: "Drop files here"
+            )
+            .frame(width: 280)
+            .frame(minHeight: 180)
+            .padding(.top, 24)
+
             Spacer()
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+}
+
+struct ZoneView: View {
+    let title: String
+    let iconName: String
+    let emptyMessage: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: iconName)
+                .font(.system(size: 34))
+                .foregroundStyle(Color.accentColor)
+
+            Text(title)
+                .font(.headline)
+
+            Text(emptyMessage)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(.quaternary, lineWidth: 1)
+        }
     }
 }
 
