@@ -1,5 +1,6 @@
 import SwiftUI
 import Foundation
+import UniformTypeIdentifiers
 
 #if os(macOS)
 import AppKit
@@ -7,6 +8,7 @@ import AppKit
 
 struct ContentView: View {
     @State private var projectZones: [ProjectZone]
+    @State private var screenshotFiles: [ProjectFile]
     @State private var isShowingCreateZoneSheet = false
     @State private var newZoneName = ""
     @State private var isShowingRenameZoneSheet = false
@@ -14,9 +16,11 @@ struct ContentView: View {
     @State private var renameZoneName = ""
 
     private static let projectZonesStorageKey = "projectZones"
+    private static let screenshotFilesStorageKey = "screenshotFiles"
 
     init() {
         _projectZones = State(initialValue: Self.loadProjectZones())
+        _screenshotFiles = State(initialValue: Self.loadScreenshotFiles())
     }
 
     var body: some View {
@@ -54,11 +58,13 @@ struct ContentView: View {
                 alignment: .leading,
                 spacing: 20
             ) {
-                ZoneView(
-                    title: "Screenshots",
-                    iconName: "photo",
-                    emptyMessage: "Drop images here"
+                ScreenshotZoneView(
+                    files: screenshotFiles,
+                    onRemoveFile: removeScreenshotFile
                 )
+                .dropDestination(for: URL.self) { urls, _ in
+                    _ = addScreenshotFiles(urls)
+                }
                 .frame(minHeight: 180)
 
                 ZoneView(
@@ -211,6 +217,52 @@ struct ContentView: View {
         saveProjectZones()
     }
 
+    private func addScreenshotFiles(_ urls: [URL]) -> Bool {
+        let imageURLs = urls.filter { $0.isFileURL && isImageFile($0) }
+        guard !imageURLs.isEmpty else { return false }
+
+        var didAddFiles = false
+        for url in imageURLs {
+            guard let file = ProjectFile(fileURL: url),
+                  !screenshotFiles.contains(where: { $0.fileURL == file.fileURL }) else {
+                continue
+            }
+
+            screenshotFiles.append(file)
+            didAddFiles = true
+        }
+
+        if didAddFiles {
+            saveScreenshotFiles()
+        }
+
+        return didAddFiles
+    }
+
+    private func removeScreenshotFile(_ file: ProjectFile) {
+        screenshotFiles.removeAll { $0.id == file.id }
+        saveScreenshotFiles()
+    }
+
+    private func isImageFile(_ fileURL: URL) -> Bool {
+        #if os(macOS)
+        let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        guard let contentType = try? fileURL.resourceValues(forKeys: [.contentTypeKey]).contentType else {
+            return false
+        }
+
+        return contentType.conforms(to: .image)
+        #else
+        return false
+        #endif
+    }
+
     private nonisolated static func loadProjectZones() -> [ProjectZone] {
         guard let data = UserDefaults.standard.data(forKey: projectZonesStorageKey),
               let zones = try? JSONDecoder().decode([ProjectZone].self, from: data) else {
@@ -230,6 +282,27 @@ struct ContentView: View {
         guard let data = try? JSONEncoder().encode(projectZones) else { return }
 
         UserDefaults.standard.set(data, forKey: Self.projectZonesStorageKey)
+    }
+
+    private nonisolated static func loadScreenshotFiles() -> [ProjectFile] {
+        guard let data = UserDefaults.standard.data(forKey: screenshotFilesStorageKey),
+              let files = try? JSONDecoder().decode([ProjectFile].self, from: data) else {
+            return []
+        }
+
+        let restoredFiles = files.map(ProjectFile.restoringBookmark)
+
+        if let refreshedData = try? JSONEncoder().encode(restoredFiles) {
+            UserDefaults.standard.set(refreshedData, forKey: screenshotFilesStorageKey)
+        }
+
+        return restoredFiles
+    }
+
+    private func saveScreenshotFiles() {
+        guard let data = try? JSONEncoder().encode(screenshotFiles) else { return }
+
+        UserDefaults.standard.set(data, forKey: Self.screenshotFilesStorageKey)
     }
 
     private nonisolated static func restoreFiles(in zone: ProjectZone) -> ProjectZone {
@@ -323,6 +396,21 @@ struct ProjectFile: Identifiable, Codable {
         try container.encode(bookmarkData, forKey: .bookmarkData)
     }
 
+    func open() {
+        #if os(macOS)
+        guard let fileURL else { return }
+
+        let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        NSWorkspace.shared.open(fileURL)
+        #endif
+    }
+
     nonisolated static func restoringBookmark(_ file: ProjectFile) -> ProjectFile {
         #if os(macOS)
         var restoredFile = file
@@ -363,6 +451,131 @@ struct ProjectFile: Identifiable, Codable {
     }
 }
 
+struct ScreenshotZoneView: View {
+    let files: [ProjectFile]
+    var onRemoveFile: (ProjectFile) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: "photo")
+                    .font(.title3)
+                    .foregroundStyle(Color.accentColor)
+
+                Text("Screenshots")
+                    .font(.headline)
+            }
+
+            if files.isEmpty {
+                Text("Drop images here")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVGrid(
+                        columns: [GridItem(.adaptive(minimum: 96), spacing: 12)],
+                        spacing: 12
+                    ) {
+                        ForEach(files) { file in
+                            ScreenshotThumbnailView(
+                                file: file,
+                                onRemove: onRemoveFile
+                            )
+                        }
+                    }
+                }
+                .frame(maxHeight: 150)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .padding(24)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 14))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14)
+                .stroke(.quaternary, lineWidth: 1)
+        }
+    }
+}
+
+struct ScreenshotThumbnailView: View {
+    let file: ProjectFile
+    var onRemove: (ProjectFile) -> Void
+
+    #if os(macOS)
+    @State private var thumbnail: NSImage?
+    #endif
+
+    var body: some View {
+        Button {
+            file.open()
+        } label: {
+            VStack(spacing: 6) {
+                thumbnailView
+                    .frame(height: 72)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                Text(file.name)
+                    .font(.caption)
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity)
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(file.fileURL == nil)
+        .accessibilityLabel("Open \(file.name)")
+        .contextMenu {
+            Button("Remove from Screenshots", role: .destructive) {
+                onRemove(file)
+            }
+        }
+        .task(id: file.id) {
+            #if os(macOS)
+            thumbnail = loadThumbnail()
+            #endif
+        }
+    }
+
+    @ViewBuilder
+    private var thumbnailView: some View {
+        #if os(macOS)
+        if let thumbnail {
+            Image(nsImage: thumbnail)
+                .resizable()
+                .scaledToFill()
+        } else {
+            thumbnailPlaceholder
+        }
+        #else
+        thumbnailPlaceholder
+        #endif
+    }
+
+    private var thumbnailPlaceholder: some View {
+        Image(systemName: "photo")
+            .font(.title2)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    #if os(macOS)
+    private func loadThumbnail() -> NSImage? {
+        guard let fileURL = file.fileURL else { return nil }
+
+        let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        return NSImage(contentsOf: fileURL)
+    }
+    #endif
+}
+
 struct ZoneView: View {
     let title: String
     let iconName: String
@@ -388,7 +601,7 @@ struct ZoneView: View {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(files) { file in
                             Button {
-                                openFile(file)
+                                file.open()
                             } label: {
                                 HStack(spacing: 8) {
                                     Image(systemName: file.fileURL?.hasDirectoryPath == true ? "folder" : "doc")
@@ -431,20 +644,6 @@ struct ZoneView: View {
         }
     }
 
-    private func openFile(_ file: ProjectFile) {
-        #if os(macOS)
-        guard let fileURL = file.fileURL else { return }
-
-        let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
-        defer {
-            if didStartAccessing {
-                fileURL.stopAccessingSecurityScopedResource()
-            }
-        }
-
-        NSWorkspace.shared.open(fileURL)
-        #endif
-    }
 }
 
 #Preview {
