@@ -5,6 +5,9 @@ struct ContentView: View {
     @State private var projectZones: [ProjectZone] = []
     @State private var isShowingCreateZoneSheet = false
     @State private var newZoneName = ""
+    @State private var isShowingRenameZoneSheet = false
+    @State private var selectedZoneID: UUID?
+    @State private var renameZoneName = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -61,6 +64,24 @@ struct ContentView: View {
                         iconName: "folder",
                         emptyMessage: "Drop files here"
                     )
+                    .overlay(alignment: .topTrailing) {
+                        Menu {
+                            Button("Rename") {
+                                selectedZoneID = zone.id
+                                renameZoneName = zone.name
+                                isShowingRenameZoneSheet = true
+                            }
+
+                            Button("Delete", role: .destructive) {
+                                projectZones.removeAll { $0.id == zone.id }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .frame(width: 28, height: 28)
+                        }
+                        .menuStyle(.borderlessButton)
+                        .padding(12)
+                    }
                     .frame(minHeight: 180)
                 }
             }
@@ -100,12 +121,45 @@ struct ContentView: View {
             .padding(24)
             .frame(width: 360)
         }
+        .sheet(isPresented: $isShowingRenameZoneSheet) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Rename Project Zone")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                TextField("Zone name", text: $renameZoneName)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack {
+                    Spacer()
+
+                    Button("Cancel") {
+                        isShowingRenameZoneSheet = false
+                    }
+
+                    Button("Save") {
+                        let name = renameZoneName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard let selectedZoneID = selectedZoneID, !name.isEmpty else { return }
+
+                        if let index = projectZones.firstIndex(where: { $0.id == selectedZoneID }) {
+                            projectZones[index].name = name
+                        }
+
+                        isShowingRenameZoneSheet = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(renameZoneName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(24)
+            .frame(width: 360)
+        }
     }
 }
 
 struct ProjectZone: Identifiable {
     let id = UUID()
-    let name: String
+    var name: String
 }
 
 struct ZoneView: View {
