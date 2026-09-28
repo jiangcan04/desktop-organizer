@@ -1,6 +1,11 @@
 import SwiftUI
+import Foundation
 
 struct ContentView: View {
+    @State private var projectZones: [ProjectZone] = []
+    @State private var isShowingCreateZoneSheet = false
+    @State private var newZoneName = ""
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
@@ -11,7 +16,8 @@ struct ContentView: View {
                 Spacer()
 
                 Button {
-                    // Workspace creation will be added in a later iteration.
+                    newZoneName = ""
+                    isShowingCreateZoneSheet = true
                 } label: {
                     Image(systemName: "plus")
                         .font(.title3.weight(.semibold))
@@ -55,6 +61,15 @@ struct ContentView: View {
                     emptyMessage: "Drop files here"
                 )
                 .frame(minHeight: 180)
+
+                ForEach(projectZones) { zone in
+                    ZoneView(
+                        title: zone.name,
+                        iconName: "folder",
+                        emptyMessage: "Drop files here"
+                    )
+                    .frame(minHeight: 180)
+                }
             }
             .padding(.top, 24)
 
@@ -62,7 +77,42 @@ struct ContentView: View {
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .sheet(isPresented: $isShowingCreateZoneSheet) {
+            VStack(alignment: .leading, spacing: 20) {
+                Text("Create Project Zone")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                TextField("Zone name", text: $newZoneName)
+                    .textFieldStyle(.roundedBorder)
+
+                HStack {
+                    Spacer()
+
+                    Button("Cancel") {
+                        isShowingCreateZoneSheet = false
+                    }
+
+                    Button("Create") {
+                        let name = newZoneName.trimmingCharacters(in: .whitespacesAndNewlines)
+                        guard !name.isEmpty else { return }
+
+                        projectZones.append(ProjectZone(name: name))
+                        isShowingCreateZoneSheet = false
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(newZoneName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(24)
+            .frame(width: 360)
+        }
     }
+}
+
+struct ProjectZone: Identifiable {
+    let id = UUID()
+    let name: String
 }
 
 struct ZoneView: View {
