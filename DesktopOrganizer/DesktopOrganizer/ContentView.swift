@@ -27,13 +27,35 @@ struct ContentView: View {
                 .foregroundStyle(.secondary)
                 .padding(.top, 12)
 
-            ZoneView(
-                title: "Research",
-                iconName: "folder",
-                emptyMessage: "Drop files here"
-            )
-            .frame(width: 280)
-            .frame(minHeight: 180)
+            LazyVGrid(
+                columns: [
+                    GridItem(.flexible(), spacing: 20),
+                    GridItem(.flexible(), spacing: 20)
+                ],
+                alignment: .leading,
+                spacing: 20
+            ) {
+                ZoneView(
+                    title: "Research",
+                    iconName: "folder",
+                    emptyMessage: "Drop files here"
+                )
+                .frame(minHeight: 180)
+
+                ZoneView(
+                    title: "Screenshots",
+                    iconName: "photo",
+                    emptyMessage: "Drop images here"
+                )
+                .frame(minHeight: 180)
+
+                ZoneView(
+                    title: "Inbox",
+                    iconName: "tray",
+                    emptyMessage: "Drop files here"
+                )
+                .frame(minHeight: 180)
+            }
             .padding(.top, 24)
 
             Spacer()
