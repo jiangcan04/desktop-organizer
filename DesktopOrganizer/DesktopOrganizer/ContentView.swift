@@ -62,7 +62,8 @@ struct ContentView: View {
                     ZoneView(
                         title: zone.name,
                         iconName: "folder",
-                        emptyMessage: "Drop files here"
+                        emptyMessage: "Drop files here",
+                        fileURLs: zone.fileURLs
                     )
                     .overlay(alignment: .topTrailing) {
                         Menu {
@@ -81,6 +82,9 @@ struct ContentView: View {
                         }
                         .menuStyle(.borderlessButton)
                         .padding(12)
+                    }
+                    .dropDestination(for: URL.self) { urls, _ in
+                        addFiles(urls, to: zone.id)
                     }
                     .frame(minHeight: 180)
                 }
@@ -155,17 +159,34 @@ struct ContentView: View {
             .frame(width: 360)
         }
     }
+
+    private func addFiles(_ urls: [URL], to zoneID: UUID) -> Bool {
+        guard let index = projectZones.firstIndex(where: { $0.id == zoneID }) else {
+            return false
+        }
+
+        let fileURLs = urls.filter(\.isFileURL)
+        guard !fileURLs.isEmpty else { return false }
+
+        for url in fileURLs where !projectZones[index].fileURLs.contains(url) {
+            projectZones[index].fileURLs.append(url)
+        }
+
+        return true
+    }
 }
 
 struct ProjectZone: Identifiable {
     let id = UUID()
     var name: String
+    var fileURLs: [URL] = []
 }
 
 struct ZoneView: View {
     let title: String
     let iconName: String
     let emptyMessage: String
+    var fileURLs: [URL] = []
 
     var body: some View {
         VStack(spacing: 12) {
@@ -176,9 +197,28 @@ struct ZoneView: View {
             Text(title)
                 .font(.headline)
 
-            Text(emptyMessage)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+            if fileURLs.isEmpty {
+                Text(emptyMessage)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 8) {
+                        ForEach(fileURLs, id: \.self) { fileURL in
+                            HStack(spacing: 8) {
+                                Image(systemName: fileURL.hasDirectoryPath ? "folder" : "doc")
+                                    .foregroundStyle(Color.accentColor)
+
+                                Text(fileURL.lastPathComponent)
+                                    .lineLimit(1)
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 96)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(24)
