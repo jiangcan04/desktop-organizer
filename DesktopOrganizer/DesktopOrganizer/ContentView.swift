@@ -6,12 +6,18 @@ import AppKit
 #endif
 
 struct ContentView: View {
-    @State private var projectZones: [ProjectZone] = []
+    @State private var projectZones: [ProjectZone]
     @State private var isShowingCreateZoneSheet = false
     @State private var newZoneName = ""
     @State private var isShowingRenameZoneSheet = false
     @State private var selectedZoneID: UUID?
     @State private var renameZoneName = ""
+
+    private static let projectZonesStorageKey = "projectZones"
+
+    init() {
+        _projectZones = State(initialValue: Self.loadProjectZones())
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -79,6 +85,7 @@ struct ContentView: View {
 
                             Button("Delete", role: .destructive) {
                                 projectZones.removeAll { $0.id == zone.id }
+                                saveProjectZones()
                             }
                         } label: {
                             Image(systemName: "ellipsis")
@@ -120,6 +127,7 @@ struct ContentView: View {
                         guard !name.isEmpty else { return }
 
                         projectZones.append(ProjectZone(name: name))
+                        saveProjectZones()
                         isShowingCreateZoneSheet = false
                     }
                     .buttonStyle(.borderedProminent)
@@ -151,6 +159,7 @@ struct ContentView: View {
 
                         if let index = projectZones.firstIndex(where: { $0.id == selectedZoneID }) {
                             projectZones[index].name = name
+                            saveProjectZones()
                         }
 
                         isShowingRenameZoneSheet = false
@@ -178,12 +187,37 @@ struct ContentView: View {
 
         return true
     }
+
+    private static func loadProjectZones() -> [ProjectZone] {
+        guard let data = UserDefaults.standard.data(forKey: projectZonesStorageKey),
+              let zones = try? JSONDecoder().decode([ProjectZone].self, from: data) else {
+            return []
+        }
+
+        return zones
+    }
+
+    private func saveProjectZones() {
+        guard let data = try? JSONEncoder().encode(projectZones) else { return }
+
+        UserDefaults.standard.set(data, forKey: Self.projectZonesStorageKey)
+    }
 }
 
-struct ProjectZone: Identifiable {
-    let id = UUID()
+struct ProjectZone: Identifiable, Codable {
+    let id: UUID
     var name: String
     var fileURLs: [URL] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+    }
+
+    init(id: UUID = UUID(), name: String) {
+        self.id = id
+        self.name = name
+    }
 }
 
 struct ZoneView: View {
