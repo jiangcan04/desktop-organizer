@@ -73,7 +73,7 @@ struct ContentView: View {
                         title: zone.name,
                         iconName: "folder",
                         emptyMessage: "Drop files here",
-                        fileURLs: zone.fileURLs
+                        files: zone.files
                     )
                     .overlay(alignment: .topTrailing) {
                         Menu {
@@ -95,7 +95,7 @@ struct ContentView: View {
                         .padding(12)
                     }
                     .dropDestination(for: URL.self) { urls, _ in
-                        addFiles(urls, to: zone.id)
+                        _ = addFiles(urls, to: zone.id)
                     }
                     .frame(minHeight: 180)
                 }
@@ -181,20 +181,37 @@ struct ContentView: View {
         let fileURLs = urls.filter(\.isFileURL)
         guard !fileURLs.isEmpty else { return false }
 
-        for url in fileURLs where !projectZones[index].fileURLs.contains(url) {
-            projectZones[index].fileURLs.append(url)
+        var didAddFiles = false
+        for url in fileURLs {
+            guard let file = ProjectFile(fileURL: url),
+                  !projectZones[index].files.contains(where: { $0.fileURL == file.fileURL }) else {
+                continue
+            }
+
+            projectZones[index].files.append(file)
+            didAddFiles = true
         }
 
-        return true
+        if didAddFiles {
+            saveProjectZones()
+        }
+
+        return didAddFiles
     }
 
-    private static func loadProjectZones() -> [ProjectZone] {
+    private nonisolated static func loadProjectZones() -> [ProjectZone] {
         guard let data = UserDefaults.standard.data(forKey: projectZonesStorageKey),
               let zones = try? JSONDecoder().decode([ProjectZone].self, from: data) else {
             return []
         }
 
-        return zones
+        let restoredZones = zones.map(Self.restoreFiles)
+
+        if let refreshedData = try? JSONEncoder().encode(restoredZones) {
+            UserDefaults.standard.set(refreshedData, forKey: projectZonesStorageKey)
+        }
+
+        return restoredZones
     }
 
     private func saveProjectZones() {
@@ -202,21 +219,135 @@ struct ContentView: View {
 
         UserDefaults.standard.set(data, forKey: Self.projectZonesStorageKey)
     }
+
+    private nonisolated static func restoreFiles(in zone: ProjectZone) -> ProjectZone {
+        var restoredZone = zone
+        restoredZone.files = zone.files.map(ProjectFile.restoringBookmark)
+        return restoredZone
+    }
 }
 
 struct ProjectZone: Identifiable, Codable {
     let id: UUID
     var name: String
-    var fileURLs: [URL] = []
+    var files: [ProjectFile] = []
 
     private enum CodingKeys: String, CodingKey {
         case id
         case name
+        case files
     }
 
     init(id: UUID = UUID(), name: String) {
         self.id = id
         self.name = name
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        files = try container.decodeIfPresent([ProjectFile].self, forKey: .files) ?? []
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(files, forKey: .files)
+    }
+}
+
+struct ProjectFile: Identifiable, Codable {
+    let id: UUID
+    let name: String
+    var bookmarkData: Data
+    var fileURL: URL?
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case bookmarkData
+    }
+
+    init?(fileURL: URL) {
+        #if os(macOS)
+        let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        guard let bookmarkData = try? fileURL.bookmarkData(
+            options: .withSecurityScope,
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) else {
+            return nil
+        }
+
+        id = UUID()
+        name = fileURL.lastPathComponent
+        self.bookmarkData = bookmarkData
+        self.fileURL = fileURL
+        #else
+        return nil
+        #endif
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        bookmarkData = try container.decode(Data.self, forKey: .bookmarkData)
+        fileURL = nil
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(bookmarkData, forKey: .bookmarkData)
+    }
+
+    nonisolated static func restoringBookmark(_ file: ProjectFile) -> ProjectFile {
+        #if os(macOS)
+        var restoredFile = file
+        var isStale = false
+
+        guard let resolvedURL = try? URL(
+            resolvingBookmarkData: file.bookmarkData,
+            options: [.withSecurityScope, .withoutUI],
+            relativeTo: nil,
+            bookmarkDataIsStale: &isStale
+        ) else {
+            return restoredFile
+        }
+
+        restoredFile.fileURL = resolvedURL
+
+        if isStale {
+            let didStartAccessing = resolvedURL.startAccessingSecurityScopedResource()
+            defer {
+                if didStartAccessing {
+                    resolvedURL.stopAccessingSecurityScopedResource()
+                }
+            }
+
+            if let refreshedBookmarkData = try? resolvedURL.bookmarkData(
+                options: .withSecurityScope,
+                includingResourceValuesForKeys: nil,
+                relativeTo: nil
+            ) {
+                restoredFile.bookmarkData = refreshedBookmarkData
+            }
+        }
+
+        return restoredFile
+        #else
+        return file
+        #endif
     }
 }
 
@@ -224,7 +355,7 @@ struct ZoneView: View {
     let title: String
     let iconName: String
     let emptyMessage: String
-    var fileURLs: [URL] = []
+    var files: [ProjectFile] = []
 
     var body: some View {
         VStack(spacing: 12) {
@@ -235,22 +366,22 @@ struct ZoneView: View {
             Text(title)
                 .font(.headline)
 
-            if fileURLs.isEmpty {
+            if files.isEmpty {
                 Text(emptyMessage)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
-                        ForEach(fileURLs, id: \.self) { fileURL in
+                        ForEach(files) { file in
                             Button {
-                                openFile(fileURL)
+                                openFile(file)
                             } label: {
                                 HStack(spacing: 8) {
-                                    Image(systemName: fileURL.hasDirectoryPath ? "folder" : "doc")
+                                    Image(systemName: file.fileURL?.hasDirectoryPath == true ? "folder" : "doc")
                                         .foregroundStyle(Color.accentColor)
 
-                                    Text(fileURL.lastPathComponent)
+                                    Text(file.name)
                                         .lineLimit(1)
 
                                     Spacer()
@@ -262,7 +393,8 @@ struct ZoneView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Open \(fileURL.lastPathComponent)")
+                            .disabled(file.fileURL == nil)
+                            .accessibilityLabel("Open \(file.name)")
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -279,8 +411,17 @@ struct ZoneView: View {
         }
     }
 
-    private func openFile(_ fileURL: URL) {
+    private func openFile(_ file: ProjectFile) {
         #if os(macOS)
+        guard let fileURL = file.fileURL else { return }
+
+        let didStartAccessing = fileURL.startAccessingSecurityScopedResource()
+        defer {
+            if didStartAccessing {
+                fileURL.stopAccessingSecurityScopedResource()
+            }
+        }
+
         NSWorkspace.shared.open(fileURL)
         #endif
     }
