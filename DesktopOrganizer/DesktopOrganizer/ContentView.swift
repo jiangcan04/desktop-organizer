@@ -1,6 +1,10 @@
 import SwiftUI
 import Foundation
 
+#if os(macOS)
+import AppKit
+#endif
+
 struct ContentView: View {
     @State private var projectZones: [ProjectZone] = []
     @State private var isShowingCreateZoneSheet = false
@@ -205,14 +209,26 @@ struct ZoneView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 8) {
                         ForEach(fileURLs, id: \.self) { fileURL in
-                            HStack(spacing: 8) {
-                                Image(systemName: fileURL.hasDirectoryPath ? "folder" : "doc")
-                                    .foregroundStyle(Color.accentColor)
+                            Button {
+                                openFile(fileURL)
+                            } label: {
+                                HStack(spacing: 8) {
+                                    Image(systemName: fileURL.hasDirectoryPath ? "folder" : "doc")
+                                        .foregroundStyle(Color.accentColor)
 
-                                Text(fileURL.lastPathComponent)
-                                    .lineLimit(1)
+                                    Text(fileURL.lastPathComponent)
+                                        .lineLimit(1)
+
+                                    Spacer()
+
+                                    Image(systemName: "arrow.up.right.square")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .font(.subheadline)
+                                .contentShape(Rectangle())
                             }
-                            .font(.subheadline)
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Open \(fileURL.lastPathComponent)")
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -227,6 +243,12 @@ struct ZoneView: View {
             RoundedRectangle(cornerRadius: 14)
                 .stroke(.quaternary, lineWidth: 1)
         }
+    }
+
+    private func openFile(_ fileURL: URL) {
+        #if os(macOS)
+        NSWorkspace.shared.open(fileURL)
+        #endif
     }
 }
 
