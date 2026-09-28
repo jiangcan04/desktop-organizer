@@ -42,13 +42,6 @@ struct ContentView: View {
                 spacing: 20
             ) {
                 ZoneView(
-                    title: "Research",
-                    iconName: "folder",
-                    emptyMessage: "Drop files here"
-                )
-                .frame(minHeight: 180)
-
-                ZoneView(
                     title: "Screenshots",
                     iconName: "photo",
                     emptyMessage: "Drop images here"
