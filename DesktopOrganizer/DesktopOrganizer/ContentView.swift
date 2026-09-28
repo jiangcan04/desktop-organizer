@@ -73,7 +73,10 @@ struct ContentView: View {
                         title: zone.name,
                         iconName: "folder",
                         emptyMessage: "Drop files here",
-                        files: zone.files
+                        files: zone.files,
+                        onRemoveFile: { file in
+                            removeFile(file, from: zone.id)
+                        }
                     )
                     .overlay(alignment: .topTrailing) {
                         Menu {
@@ -197,6 +200,15 @@ struct ContentView: View {
         }
 
         return didAddFiles
+    }
+
+    private func removeFile(_ file: ProjectFile, from zoneID: UUID) {
+        guard let index = projectZones.firstIndex(where: { $0.id == zoneID }) else {
+            return
+        }
+
+        projectZones[index].files.removeAll { $0.id == file.id }
+        saveProjectZones()
     }
 
     private nonisolated static func loadProjectZones() -> [ProjectZone] {
@@ -356,6 +368,7 @@ struct ZoneView: View {
     let iconName: String
     let emptyMessage: String
     var files: [ProjectFile] = []
+    var onRemoveFile: ((ProjectFile) -> Void)?
 
     var body: some View {
         VStack(spacing: 12) {
@@ -395,6 +408,13 @@ struct ZoneView: View {
                             .buttonStyle(.plain)
                             .disabled(file.fileURL == nil)
                             .accessibilityLabel("Open \(file.name)")
+                            .contextMenu {
+                                if let onRemoveFile {
+                                    Button("Remove from Zone", role: .destructive) {
+                                        onRemoveFile(file)
+                                    }
+                                }
+                            }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
